@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Server Terminal</title>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.4/sockjs.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/xterm/2.8.1/xterm.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/xterm/2.8.1/addons/fit/fit.min.js"></script>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/xterm/2.8.1/xterm.min.css"/>
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Ubuntu"/>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        .top-bar {
+            height: 50px;
+        }
+
+        #brand {
+            position: absolute;
+            width: calc(100% - 16px);
+            top: 0;
+            left: 0;
+            font-size: 16px;
+            padding-left: 16px;
+            color: white;
+            font-family: 'Ubuntu', sans-serif;
+            background-color: #782b90;
+        }
+
+        #terminal {
+            height: calc(100% - 50px);
+            overflow: hidden;
+            font-size: 12px;
+            font-family: Menlo, Monaco, Consolas, monospace;
+            background-color: #000;
+        }
+    </style>
+    <script>
+        (function () {
+
+            var ServerTerm = function (url, element, options) {
+
+
+                options = options || {};
+                var term = new Terminal(options);
+                term.open(element, true);
+
+                var socket;
+                var initialResize = true;
+                var onResize = async function (size) {
+
+                    var cols = size.cols, rows = size.rows;
+                    if (initialResize) {
+                        const tokenUrl = window.location.origin + "/uuid";
+                        const response = await fetch(tokenUrl)
+                        if (!response.ok) {
+                            throw new Error(`Response status: ${response.status}`);
+                        }
+                        const tokenJson = await response.json()
+                        const uuid = tokenJson.token
+                        console.log(`uuid ${uuid}`)
+                        initialResize = false;
+                        url += (url.indexOf('?') > -1 ? '&' : '?') + "cols=" + cols + "&rows=" + rows;
+                        if (url.substring(0, 2) === 'ws') {
+                            socket = new WebSocket(url);
+                            socket.binaryType = 'blob';
+                        } else {
+                            socket = new SockJS(url);
+                        }
+                        socket.onopen = function () {
+                            socket.send(uuid)
+                            socket.onmessage = function (event) {
+                                if (event.type === 'message') {
+                                    if (typeof event.data !== 'string') {
+                                        var reader = new FileReader();
+                                        reader.onloadend = function () {
+                                            term.write(reader.result);
+                                        };
+                                        reader.readAsText(event.data);
+                                    } else {
+                                        term.write(event.data);
+                                    }
+                                }
+                            };
+                            socket.onclose = function () {
+                                socket.onmessage = null;
+                                socket.onclose = null;
+                                //term.destroy();
+                            };
+                            term.on('data', function (data) {
+                                socket.send(JSON.stringify({action: 'read', data: data}));
+                            });
+                        };
+                    } else {
+                        socket.send(JSON.stringify({action: 'resize', cols: cols, rows: rows}));
+                    }
+                };
+
+                term.on('resize', onResize);
+                if (options.cols && options.rows) {
+                    onResize(options);
+                }
+
+                return {
+                    socket: socket,
+                    term: term
+                };
+            };
+
+            if (typeof module !== 'undefined') {
+                module.exports = ServerTerm;
+            } else {
+                this.ServerTerm = ServerTerm;
+            }
+        })();
+    </script>
+</head>
+
+<body>
+<div class="top-bar"></div>
+<div id="brand">Server Terminal</div>
+<div id="terminal"></div>
+<script>
+    var url;
+    if (typeof SockJS !== 'undefined') {
+        url = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/shell';
+    } else {
+        url = location.protocol.replace('http', 'ws') + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/shell/websocket';
+    }
+
+    // Workaround for https://github.com/sourcelair/xterm.js/issues/762
+    var brandElement = document.getElementById('brand');
+    var fixHeight = function (term) {
+        term.element.style.marginTop = '';
+        term.fit();
+        term.element.style.marginTop = term.element.parentElement.offsetHeight - term.element.offsetHeight + 'px';
+        brandElement.style.lineHeight = document.body.offsetHeight - term.element.offsetHeight + 'px';
+    };
+
+    var serverTerm = new ServerTerm(url, document.getElementById('terminal'));
+    fixHeight(serverTerm.term);
+
+    window.addEventListener('resize', function () {
+        fixHeight(serverTerm.term);
+    });
+</script>
+</body>
+</html>
