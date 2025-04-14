@@ -1,12 +1,10 @@
 package com.balonglong
 
 import io.vertx.core.Handler
-import io.vertx.ext.shell.ShellService
 import io.vertx.ext.shell.cli.Completion
 import io.vertx.ext.shell.session.Session
 import io.vertx.ext.shell.term.SignalHandler
 import io.vertx.ext.shell.term.Term
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.channel.ClientChannelEvent
